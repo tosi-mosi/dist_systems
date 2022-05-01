@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package rpc;
+
+service Replicator {
+  rpc replicateMsg (Request) returns (Response) {}
+}
+
+message Request {
+  string msg = 1;
+}
+
+message Response {
+  bool success = 1;
+}
