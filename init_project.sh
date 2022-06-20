@@ -36,6 +36,9 @@ docker run -it --rm -uroot -v$(pwd):/root/dist_systems -w/root/dist_systems --ca
 /bin/bash \
 -c "apt-get update && apt-get install -y inetutils-ping iproute2 netcat && pip install aiohttp grpcio-tools grpcio && exec /bin/bash -i"
 
+#for sending requests using dns names
+docker run -it --rm -uroot --net=my_network1 python:3 bash
+
 
 #--------DELAYS USING LINUX CMD--------------
 # delay is x3 for client->master->sec

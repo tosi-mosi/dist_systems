@@ -19,9 +19,10 @@ CHANNEL_OPTIONS = [
     # ('grpc.enable_retries', 0),
     # ('grpc.keepalive_timeout_ms', 10000)
 ]
-secondaries_ips = [
+secondaries_dns_names = [
     f'dist_systems.s.{i+1}' for i in range(0, int(sys.argv[1]))
 ]
+MAX_WRITE_CONCERN = 1 + len(secondaries_dns_names)
 
 async def replicate_msg(sec_ip, msg):
     # this will recreate channel on every single request, is it OK ?
@@ -33,7 +34,7 @@ async def replicate_msg(sec_ip, msg):
         #                                timeout=10)
         logging.info('Waiting for gRPC response from %s', sec_ip)
         response = await stub.replicateMsg(rpc_pb2.Request(msg=msg))
-    logging.info('%s on %s', 'Success' if response.success else 'Fail', sec_ip)
+    logging.info('%s on %s', 'ACK' if response.success else 'Fail', sec_ip)
     return (sec_ip, response.success)
 
 # HTTP server
@@ -43,15 +44,35 @@ async def handle_list(request):
 
 async def handle_append(request):
     logging.info('Processing http request from %r', request.remote)
-    msg = await request.text()
-    acks_info = await asyncio.gather(*[replicate_msg(s, msg) for s in secondaries_ips])
-    logging.info(f'ACKs: {acks_info}\n')
+    body = await request.json()
+    
+    msg = body.get('msg')
+    if msg is None:
+        logging.error('Wrong POST body %s\n', body)
+        return web.Response(text=f'Failed to parse POST request: Wrong POST body. Request should have "msg" and optionally "w"(write concern) keys\n', status=400)
+    
+    write_concern = int(body.get('w', MAX_WRITE_CONCERN))
+    if write_concern < 1 or write_concern > MAX_WRITE_CONCERN:
+        logging.error('Wrong write_concern parameter %s\n', body)
+        return web.Response(text=f'Failed to parse POST request: Wrong write_concern parameter. write_concern shouldn\'t be greater than {MAX_WRITE_CONCERN}\n', status=400)
+
+    num_of_acks_to_wait_for = write_concern - 1
+    logging.info(f'Waiting for ACKs from {num_of_acks_to_wait_for} secondary/-ies')
+    if num_of_acks_to_wait_for == 0:
+        log.append(msg)
+        logging.info(f'Appended {msg} to in-memory list\n')
+        return web.Response(text=f'Appended {msg} to in-memory list\n')
+
+    acks_info = await asyncio.gather(*[replicate_msg(s, msg) for s in secondaries_dns_names[:num_of_acks_to_wait_for]])
+    logging.info(f'ACKs: {acks_info}')
     if all([ack[1] for ack in acks_info]):
         log.append(msg)
-        return web.Response(text=f'Appending {msg} to in-memory list\n')
+        logging.info(f'Appended {msg} to in-memory list\n')
+        return web.Response(text=f'Appended {msg} to in-memory list\n')
     else:
         # here some secondaries could have added msg, but some didn't. And master didn't.
-        return web.Response(text=f'Got not enough ACKs from secondaries\n')
+        logging.error(f'Failed to append {msg}: Got not enough ACKs from secondaries\n')
+        return web.Response(text=f'Failed to append "{msg}": Got not enough ACKs from secondaries\n', status=500)
 
 if (len(sys.argv) < 2):
     print('Usage: master <number_of_secondaries>')
