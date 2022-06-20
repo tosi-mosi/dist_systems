@@ -25,16 +25,16 @@ done
 #without it can access API through containers IP
 #--ip doesn't work as expected
 #-eGRPC_VERBOSITY=DEBUG -eGRPC_TRACE=http \
-docker run -it --rm -uroot -v$(pwd):/root/dist_systems -w/root/dist_systems --cap-add=NET_ADMIN --name dist_systems.m python:3 /bin/bash \
--c "apt-get update && apt-get install -y inetutils-ping iproute2 && pip install aiohttp grpcio-tools grpcio && exec /bin/bash -i"
+docker run -it --rm -uroot -v$(pwd):/root/dist_systems -w/root/dist_systems --cap-add=NET_ADMIN --net=my_network1 --name dist_systems.m python:3 /bin/bash \
+-c "apt-get update && apt-get install -y inetutils-ping iproute2 netcat && pip install aiohttp grpcio-tools grpcio && exec /bin/bash -i"
 
-docker run -it --rm -uroot -v$(pwd):/root/dist_systems -w/root/dist_systems --ip 192.168.16.3 --cap-add=NET_ADMIN --name dist_systems.s.1 python:3 \
+docker run -it --rm -uroot -v$(pwd):/root/dist_systems -w/root/dist_systems --cap-add=NET_ADMIN --net=my_network1 --name dist_systems.s.1 python:3 \
 /bin/bash \
--c "apt-get update && apt-get install -y inetutils-ping iproute2 && pip install aiohttp grpcio-tools grpcio && exec /bin/bash -i"
+-c "apt-get update && apt-get install -y inetutils-ping iproute2 netcat && pip install aiohttp grpcio-tools grpcio && exec /bin/bash -i"
 
-docker run -it --rm -uroot -v$(pwd):/root/dist_systems -w/root/dist_systems --ip 192.168.16.4 --cap-add=NET_ADMIN --name dist_systems.s.2 python:3 \
+docker run -it --rm -uroot -v$(pwd):/root/dist_systems -w/root/dist_systems --cap-add=NET_ADMIN --net=my_network1 --name dist_systems.s.2 python:3 \
 /bin/bash \
--c "apt-get update && apt-get install -y inetutils-ping iproute2 && pip install aiohttp grpcio-tools grpcio && exec /bin/bash -i"
+-c "apt-get update && apt-get install -y inetutils-ping iproute2 netcat && pip install aiohttp grpcio-tools grpcio && exec /bin/bash -i"
 
 
 #--------DELAYS USING LINUX CMD--------------

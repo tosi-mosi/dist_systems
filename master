@@ -1,3 +1,4 @@
+#!/usr/local/bin/python3
 import asyncio
 import grpc
 import rpc_pb2
@@ -19,8 +20,7 @@ CHANNEL_OPTIONS = [
     # ('grpc.keepalive_timeout_ms', 10000)
 ]
 secondaries_ips = [
-    '192.168.16.3',
-    '192.168.16.4'
+    f'dist_systems.s.{i+1}' for i in range(0, int(sys.argv[1]))
 ]
 
 async def replicate_msg(sec_ip, msg):
@@ -39,7 +39,7 @@ async def replicate_msg(sec_ip, msg):
 # HTTP server
 # https://demos.aiohttp.org/en/latest/tutorial.html#aiohttp-demos-polls-getting-started
 async def handle_list(request):
-    return web.Response(text="\n".join(log))
+    return web.Response(text='\n'.join(log) + '\n')
 
 async def handle_append(request):
     logging.info('Processing http request from %r', request.remote)
@@ -48,17 +48,21 @@ async def handle_append(request):
     logging.info(f'ACKs: {acks_info}\n')
     if all([ack[1] for ack in acks_info]):
         log.append(msg)
-        return web.Response(text=f'Appending {msg} to in-memory list')
+        return web.Response(text=f'Appending {msg} to in-memory list\n')
     else:
         # here some secondaries could have added msg, but some didn't. And master didn't.
-        return web.Response(text=f'Got not enough ACKs from secondaries')
+        return web.Response(text=f'Got not enough ACKs from secondaries\n')
+
+if (len(sys.argv) < 2):
+    print('Usage: master <number_of_secondaries>')
+    exit(1)
 
 app = web.Application()
 app.add_routes([web.get('/list', handle_list),
                 web.post('/append', handle_append)])
 logging.basicConfig(
     level=logging.DEBUG,
-    format="[%(asctime)s.%(msecs)03d] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s",
-    datefmt="%H:%M:%S",
+    format='[%(asctime)s.%(msecs)03d] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s',
+    datefmt='%H:%M:%S',
     stream=sys.stdout)
 web.run_app(app, access_log=None)
