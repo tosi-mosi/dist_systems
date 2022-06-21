@@ -17,7 +17,7 @@ log = []
 CHANNEL_OPTIONS = [
     # ('grpc.lb_policy_name', 'pick_first'),
     # ('grpc.enable_retries', 0),
-    # ('grpc.keepalive_timeout_ms', 10000)
+    ('grpc.keepalive_timeout_ms', 5000)
 ]
 secondaries_dns_names = [
     f'dist_systems.s.{i+1}' for i in range(0, int(sys.argv[1]))
@@ -63,7 +63,14 @@ async def handle_append(request):
         logging.info(f'Appended {msg} to in-memory list\n')
         return web.Response(text=f'Appended {msg} to in-memory list\n')
 
-    acks_info = await asyncio.gather(*[replicate_msg(s, msg) for s in secondaries_dns_names[:num_of_acks_to_wait_for]])
+    secondaries_not_to_await_acks = secondaries_dns_names[num_of_acks_to_wait_for:]
+    for s in secondaries_not_to_await_acks:
+        # will it swear about me not awaiting for them?
+        asyncio.get_event_loop().create_task(replicate_msg(s, msg))
+
+    secondaries_to_await_acks = secondaries_dns_names[:num_of_acks_to_wait_for]
+    acks_info = await asyncio.gather(*[replicate_msg(s, msg) for s in secondaries_to_await_acks])
+
     logging.info(f'ACKs: {acks_info}')
     if all([ack[1] for ack in acks_info]):
         log.append(msg)
