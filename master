@@ -6,23 +6,51 @@ import rpc_pb2_grpc
 from aiohttp import web
 import logging
 import sys
+import json
+from retry import retry
 
 log = []
+
+secondaries_dns_names = [
+    f'dist_systems.s.{i+1}' for i in range(0, int(sys.argv[1]))
+]
+MAX_WRITE_CONCERN = 1 + len(secondaries_dns_names)
 
 # how to specify timout on request?
 # Plus I need multiple connections to multiple secondaries
 
 # GRPC clients
+
+grpc_retries_config = json.dumps(
+    {
+        "methodConfig": [
+            {
+                "name": [{}],
+                "timeout": "5s",
+                # "retryPolicy": {
+                #     "maxAttempts": 100000,
+                #     "initialBackoff": "1000000s",
+                #     "maxBackoff": "1000000s",
+                #     "backoffMultiplier": 1000000,
+                #     "retryableStatusCodes": ["UNAVAILABLE"],
+                # },
+            }
+        ]
+    }
+)
 # For more channel options, please see https://grpc.io/grpc/core/group__grpc__arg__keys.html
 CHANNEL_OPTIONS = [
     # ('grpc.lb_policy_name', 'pick_first'),
-    # ('grpc.enable_retries', 0),
-    ('grpc.keepalive_timeout_ms', 5000)
+    # ('grpc.retryPolicy.maxAttempts', 8),
+    # ('grpc.retryPolicy.initialBackoff', '5s'),
+    # ('grpc.retryPolicy.maxBackoff', '20s'),
+    # ('grpc.retryPolicy.backoffMultiplier', 2),
+    # ('grpc.retryPolicy.retryableStatusCodes', 14),
+    ('grpc.enable_retries', 0),
+    # ('grpc.timeout', 5000),
+    # ('grpc.service_config', grpc_retries_config),
+    # ('grpc.keepalive_timeout_ms', 5000),
 ]
-secondaries_dns_names = [
-    f'dist_systems.s.{i+1}' for i in range(0, int(sys.argv[1]))
-]
-MAX_WRITE_CONCERN = 1 + len(secondaries_dns_names)
 
 async def replicate_msg(sec_ip, msg):
     # this will recreate channel on every single request, is it OK ?
@@ -42,6 +70,16 @@ async def replicate_msg(sec_ip, msg):
 async def handle_list(request):
     return web.Response(text='\n'.join(log) + '\n')
 
+async def wait_first_n(tasks, n):
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    results = []
+    for task in done:
+        results.append(task.result())
+    if (n > len(done)):
+        results += await wait_first_n(pending, n - len(done))
+    return results
+
+
 async def handle_append(request):
     logging.info('Processing http request from %r', request.remote)
     body = await request.json()
@@ -59,17 +97,16 @@ async def handle_append(request):
     num_of_acks_to_wait_for = write_concern - 1
     logging.info(f'Waiting for ACKs from {num_of_acks_to_wait_for} secondary/-ies')
     if num_of_acks_to_wait_for == 0:
+        for s in secondaries_dns_names:
+            asyncio.get_event_loop().create_task(replicate_msg(s, msg))
         log.append(msg)
         logging.info(f'Appended {msg} to in-memory list\n')
         return web.Response(text=f'Appended {msg} to in-memory list\n')
 
-    secondaries_not_to_await_acks = secondaries_dns_names[num_of_acks_to_wait_for:]
-    for s in secondaries_not_to_await_acks:
-        # will it swear about me not awaiting for them?
-        asyncio.get_event_loop().create_task(replicate_msg(s, msg))
 
-    secondaries_to_await_acks = secondaries_dns_names[:num_of_acks_to_wait_for]
-    acks_info = await asyncio.gather(*[replicate_msg(s, msg) for s in secondaries_to_await_acks])
+    replication_tasks = [replicate_msg(s, msg) for s in secondaries_dns_names]
+    # replication_tasks = [retry(replicate_msg, s, msg) for s in secondaries_dns_names]
+    acks_info = await wait_first_n(replication_tasks, num_of_acks_to_wait_for)
 
     logging.info(f'ACKs: {acks_info}')
     if all([ack[1] for ack in acks_info]):
@@ -94,3 +131,4 @@ logging.basicConfig(
     datefmt='%H:%M:%S',
     stream=sys.stdout)
 web.run_app(app, access_log=None)
+# web.run_app(app)
