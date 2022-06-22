@@ -7,7 +7,7 @@ from aiohttp import web
 import logging
 import sys
 import json
-from retry import retry
+from common import retry, get_eth0_ipv4
 
 tr_id = 0
 log = {}
@@ -17,10 +17,27 @@ secondaries_dns_names = [
 ]
 MAX_WRITE_CONCERN = 1 + len(secondaries_dns_names)
 
-# how to specify timout on request?
-# Plus I need multiple connections to multiple secondaries
+# GRPC server
+class Replicator(rpc_pb2_grpc.ReplicatorServicer):
+    async def rejoin(
+            self, request: rpc_pb2.RejoinRequest,
+            context: grpc.aio.ServicerContext) -> rpc_pb2.RejoinResponse:
+        logging.info('Processing rejoining gRPC request')
+        result = rpc_pb2.RejoinResponse()
+        for k, v in log.items():
+            result.requests.append(rpc_pb2.Request(tr_id=k, msg=v))
+        return result
 
-# GRPC clients
+async def rpc_serve():
+    server = grpc.aio.server()
+    rpc_pb2_grpc.add_ReplicatorServicer_to_server(Replicator(), server)
+    listen_addr = f'{get_eth0_ipv4()}:50051'
+    server.add_insecure_port(listen_addr)
+    logging.info('Starting server on %s', listen_addr)
+    await server.start()
+    await server.wait_for_termination()
+
+# GRPC client
 CHANNEL_OPTIONS = [
     ('grpc.enable_retries', 0),
 ]
@@ -38,7 +55,6 @@ async def replicate_msg(sec_ip, tr_id, msg):
     return (sec_ip, response.success)
 
 # HTTP server
-# https://demos.aiohttp.org/en/latest/tutorial.html#aiohttp-demos-polls-getting-started
 async def handle_list(request):
     return web.Response(text='\n'.join([log[k] for k in sorted(log.keys())]) + '\n')
 
@@ -98,13 +114,15 @@ if (len(sys.argv) < 2):
     print('Usage: master <number_of_secondaries>')
     exit(1)
 
-app = web.Application()
-app.add_routes([web.get('/list', handle_list),
-                web.post('/append', handle_append)])
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='[%(asctime)s.%(msecs)03d] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s',
-    datefmt='%H:%M:%S',
-    stream=sys.stdout)
-web.run_app(app, access_log=None)
-# web.run_app(app)
+async def main():
+    app = web.Application()
+    app.add_routes([web.get('/list', handle_list),
+                    web.post('/append', handle_append)])
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='[%(asctime)s.%(msecs)03d] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s',
+        datefmt='%H:%M:%S',
+        stream=sys.stdout)
+    await asyncio.gather(rpc_serve(), web._run_app(app, access_log=None))
+
+asyncio.run(main())

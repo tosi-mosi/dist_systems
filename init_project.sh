@@ -37,7 +37,7 @@ docker run -it --rm -uroot -v$(pwd):/root/dist_systems -w/root/dist_systems --ca
 -c "apt-get update && apt-get install -y inetutils-ping iproute2 netcat && pip install aiohttp grpcio-tools grpcio && exec /bin/bash -i"
 
 #for sending requests using dns names
-docker run -it --rm -uroot --cap-add=NET_ADMIN --net=my_network1 python:3 \ 
+docker run -it --rm -uroot --cap-add=NET_ADMIN --net=my_network1 python:3 \
 /bin/bash -c "apt-get update && apt-get install -y inetutils-ping iproute2 netcat && exec /bin/bash -i"
 
 
@@ -51,4 +51,5 @@ docker run -it --rm -uroot --cap-add=NET_ADMIN --net=my_network1 python:3 \
 # for testing
 alias lm='time curl dist_systems.m:8080/list';
 alias ls1='time curl dist_systems.s.1:8080/list';
-alias ls2='time curl dist_systems.s.2:8080/list'
+alias ls2='time curl dist_systems.s.2:8080/list';
+app() { time curl dist_systems.m:8080/append -d"{\"msg\":\"$1\", \"w\":\"$2\"}" ; };

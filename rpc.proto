@@ -4,7 +4,7 @@ package rpc;
 
 service Replicator {
   rpc replicateMsg (Request) returns (Response) {}
-  rpc rejoin (RejoinRequest) returns (Response) {}
+  rpc rejoin (RejoinRequest) returns (RejoinResponse) {}
 }
 
 message Request {
@@ -15,4 +15,10 @@ message Request {
 // do we need this? Mb gRPC uses ACKs internally?
 message Response {
   bool success = 1;
+}
+
+message RejoinRequest {}
+
+message RejoinResponse {
+  repeated Request requests = 1;
 }

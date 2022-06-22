@@ -6,22 +6,14 @@ import rpc_pb2_grpc
 from aiohttp import web
 import logging
 import sys
-import re
-import subprocess
 import time
+from common import retry, get_eth0_ipv4
 
 log = {}
 out_of_order_requests = {}
 count = 0
 
 # potentially secondary could run rpc server and web server separately, but would need to share data somehow one with another.
-
-def get_eth0_ipv4():
-    ipv4_re = re.compile(r'.*inet\s+(.*)/')
-    ip_output = subprocess.Popen('ip -family inet a s dev eth0', shell=True, stdout=subprocess.PIPE).stdout.read()
-    line_with_ipv4 = ip_output.decode().split('\n')[1]
-    res = ipv4_re.match(line_with_ipv4)
-    return res.group(1)
 
 async def delay(secs):
     logging.info('Async sleeping for %s sec...', secs)
@@ -38,13 +30,12 @@ def process_unordered_requests(tr_id):
         # also removes tmp from dict
         log[tmp] = out_of_order_requests.pop(tmp)
 
-
 # GRPC server
 class Replicator(rpc_pb2_grpc.ReplicatorServicer):
     async def replicateMsg(
             self, request: rpc_pb2.Request,
             context: grpc.aio.ServicerContext) -> rpc_pb2.Response:
-        logging.info('Processing gRPC request')
+        logging.info('Processing replicateMsg gRPC request')
 
         global count
         # TODO break this into functions by simulation
@@ -84,7 +75,7 @@ class Replicator(rpc_pb2_grpc.ReplicatorServicer):
         logging.info('%s was appended to replica-log\n', (request.tr_id, request.msg))
         return rpc_pb2.Response(success=True)
 
-async def rpc_serve() -> None:
+async def rpc_serve():
     server = grpc.aio.server()
     rpc_pb2_grpc.add_ReplicatorServicer_to_server(Replicator(), server)
     listen_addr = f'{get_eth0_ipv4()}:50051'
@@ -92,6 +83,23 @@ async def rpc_serve() -> None:
     logging.info('Starting server on %s', listen_addr)
     await server.start()
     await server.wait_for_termination()
+
+#GRPC client
+CHANNEL_OPTIONS = [
+    ('grpc.enable_retries', 0),
+]
+
+async def rejoin():
+    async with grpc.aio.insecure_channel(target=f'dist_systems.m:{50051}',
+                                         options=CHANNEL_OPTIONS) as channel:
+        stub = rpc_pb2_grpc.ReplicatorStub(channel)
+        logging.info(f'Waiting for gRPC response from master')
+        response = await stub.rejoin(rpc_pb2.RejoinRequest())
+        logging.info(f'Rejoining with master: {len(response.requests)} items received')
+        for item in response.requests:
+            logging.info(f'Adding {(item.tr_id, item.msg)} after rejoining')
+            log[item.tr_id] = item.msg
+
 
 # HTTP server
 async def handle_list(request):
@@ -106,6 +114,6 @@ async def main():
         format='[%(asctime)s.%(msecs)03d] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s',
         datefmt='%H:%M:%S',
         stream=sys.stdout)
-    await asyncio.gather(rpc_serve(), web._run_app(app, access_log=None))
+    await asyncio.gather(rpc_serve(), web._run_app(app, access_log=None), retry(rejoin))
 
 asyncio.run(main())

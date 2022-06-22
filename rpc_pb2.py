@@ -14,12 +14,14 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\trpc.proto\x12\x03rpc\"%\n\x07Request\x12\r\n\x05tr_id\x18\x01 \x01(\x04\x12\x0b\n\x03msg\x18\x02 \x01(\t\"\x1b\n\x08Response\x12\x0f\n\x07success\x18\x01 \x01(\x08\x32;\n\nReplicator\x12-\n\x0creplicateMsg\x12\x0c.rpc.Request\x1a\r.rpc.Response\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\trpc.proto\x12\x03rpc\"%\n\x07Request\x12\r\n\x05tr_id\x18\x01 \x01(\x04\x12\x0b\n\x03msg\x18\x02 \x01(\t\"\x1b\n\x08Response\x12\x0f\n\x07success\x18\x01 \x01(\x08\"\x0f\n\rRejoinRequest\"0\n\x0eRejoinResponse\x12\x1e\n\x08requests\x18\x01 \x03(\x0b\x32\x0c.rpc.Request2p\n\nReplicator\x12-\n\x0creplicateMsg\x12\x0c.rpc.Request\x1a\r.rpc.Response\"\x00\x12\x33\n\x06rejoin\x12\x12.rpc.RejoinRequest\x1a\x13.rpc.RejoinResponse\"\x00\x62\x06proto3')
 
 
 
 _REQUEST = DESCRIPTOR.message_types_by_name['Request']
 _RESPONSE = DESCRIPTOR.message_types_by_name['Response']
+_REJOINREQUEST = DESCRIPTOR.message_types_by_name['RejoinRequest']
+_REJOINRESPONSE = DESCRIPTOR.message_types_by_name['RejoinResponse']
 Request = _reflection.GeneratedProtocolMessageType('Request', (_message.Message,), {
   'DESCRIPTOR' : _REQUEST,
   '__module__' : 'rpc_pb2'
@@ -34,6 +36,20 @@ Response = _reflection.GeneratedProtocolMessageType('Response', (_message.Messag
   })
 _sym_db.RegisterMessage(Response)
 
+RejoinRequest = _reflection.GeneratedProtocolMessageType('RejoinRequest', (_message.Message,), {
+  'DESCRIPTOR' : _REJOINREQUEST,
+  '__module__' : 'rpc_pb2'
+  # @@protoc_insertion_point(class_scope:rpc.RejoinRequest)
+  })
+_sym_db.RegisterMessage(RejoinRequest)
+
+RejoinResponse = _reflection.GeneratedProtocolMessageType('RejoinResponse', (_message.Message,), {
+  'DESCRIPTOR' : _REJOINRESPONSE,
+  '__module__' : 'rpc_pb2'
+  # @@protoc_insertion_point(class_scope:rpc.RejoinResponse)
+  })
+_sym_db.RegisterMessage(RejoinResponse)
+
 _REPLICATOR = DESCRIPTOR.services_by_name['Replicator']
 if _descriptor._USE_C_DESCRIPTORS == False:
 
@@ -42,6 +58,10 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _REQUEST._serialized_end=55
   _RESPONSE._serialized_start=57
   _RESPONSE._serialized_end=84
-  _REPLICATOR._serialized_start=86
-  _REPLICATOR._serialized_end=145
+  _REJOINREQUEST._serialized_start=86
+  _REJOINREQUEST._serialized_end=101
+  _REJOINRESPONSE._serialized_start=103
+  _REJOINRESPONSE._serialized_end=151
+  _REPLICATOR._serialized_start=153
+  _REPLICATOR._serialized_end=265
 # @@protoc_insertion_point(module_scope)
