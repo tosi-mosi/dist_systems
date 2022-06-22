@@ -4,4 +4,4 @@ Usage:
 
 	./master <number_of_secondaries>
 
-Also scripts for deploying docker and testing for copy-paste in init-project.sh
+Also copy-paste scripts for deploying docker and testing in init-project.sh

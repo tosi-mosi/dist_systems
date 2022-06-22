@@ -13,15 +13,9 @@ log = {}
 out_of_order_requests = {}
 count = 0
 
-# potentially secondary could run rpc server and web server separately, but would need to share data somehow one with another.
-
 async def delay(secs):
     logging.info('Async sleeping for %s sec...', secs)
     await asyncio.sleep(secs)
-
-# def delay(secs):
-#     logging.info('Sleeping for %s sec...', secs)
-#     time.sleep(secs)
 
 def process_unordered_requests(tr_id):
     tmp = tr_id+1
@@ -36,20 +30,8 @@ class Replicator(rpc_pb2_grpc.ReplicatorServicer):
             self, request: rpc_pb2.Request,
             context: grpc.aio.ServicerContext) -> rpc_pb2.Response:
         logging.info('Processing replicateMsg gRPC request')
-
-        global count
-        # TODO break this into functions by simulation
-        # for simulating temporary inconsistency
-        if (len(sys.argv) == 5 and sys.argv[1] == 'delay' and request.msg == sys.argv[3] and count < int(sys.argv[4])):           
-            count += 1
-            await delay(int(sys.argv[2]))
         
-        # skip this when simulating out-of-order or duplication
-        need_to_skip_this_for_simulation = len(sys.argv) == 4 \
-            and (sys.argv[1] == 'dont_add_and_abort' or sys.argv[1] == 'add_and_abort')\
-            and request.msg == sys.argv[2]\
-            and count < int(sys.argv[3])
-        if not need_to_skip_this_for_simulation:
+        def normal_handling():
             if (request.tr_id in log):
                 logging.error(f'Duplication detected: value with tr_id {request.tr_id} already present')
                 return rpc_pb2.Response(success=True)
@@ -57,23 +39,37 @@ class Replicator(rpc_pb2_grpc.ReplicatorServicer):
                 logging.info(f'Got an out of order request {(request.tr_id, request.msg)}')
                 out_of_order_requests[request.tr_id] = request.msg
                 return rpc_pb2.Response(success=True)
-
-        # for simulating out-of-order
-        if (len(sys.argv) == 4 and sys.argv[1] == 'dont_add_and_abort' and request.msg == sys.argv[2] and count < int(sys.argv[3])):
-            count += 1
-            raise Exception('MyException')
-        else:
             log[request.tr_id] = request.msg
+            process_unordered_requests(request.tr_id)
+            logging.info('%s was appended to replica-log\n', (request.tr_id, request.msg))
+            return rpc_pb2.Response(success=True)
 
-        process_unordered_requests(request.tr_id)
-
-        # for simulating duplication
-        if (len(sys.argv) == 4 and sys.argv[1] == 'add_and_abort' and request.msg == sys.argv[2] and count < int(sys.argv[3])):
+        def simulate_for_duplication():
+            global count
             count += 1
-            raise Exception('MyException')
+            raise Exception('Simulating internal server error')
 
-        logging.info('%s was appended to replica-log\n', (request.tr_id, request.msg))
-        return rpc_pb2.Response(success=True)
+        def simulate_for_out_of_order():
+            global count
+            count += 1
+            log[request.tr_id] = request.msg
+            process_unordered_requests(request.tr_id)
+            raise Exception('Simulating internal server error')
+
+        async def simulate_delay():
+            global count
+            count += 1
+            await delay(int(sys.argv[2]))
+            return normal_handling()
+
+        if (len(sys.argv) == 4 and sys.argv[1] == 'dont_add_and_abort' and request.msg == sys.argv[2] and count < int(sys.argv[3])):
+            simulate_for_duplication()
+        elif (len(sys.argv) == 4 and sys.argv[1] == 'add_and_abort' and request.msg == sys.argv[2] and count < int(sys.argv[3])):
+            simulate_for_out_of_order()
+        elif (len(sys.argv) == 5 and sys.argv[1] == 'delay' and request.msg == sys.argv[3] and count < int(sys.argv[4])):
+            return await simulate_delay()
+        else:
+            return normal_handling()
 
 async def rpc_serve():
     server = grpc.aio.server()
@@ -99,7 +95,6 @@ async def rejoin():
         for item in response.requests:
             logging.info(f'Adding {(item.tr_id, item.msg)} after rejoining')
             log[item.tr_id] = item.msg
-
 
 # HTTP server
 async def handle_list(request):

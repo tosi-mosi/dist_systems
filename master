@@ -43,8 +43,6 @@ CHANNEL_OPTIONS = [
 ]
 
 async def replicate_msg(sec_ip, tr_id, msg):
-    # this will recreate channel on every single request, is it OK ?
-    # need to understand what is this channel
     async with grpc.aio.insecure_channel(target=f'{sec_ip}:{50051}',
                                          options=CHANNEL_OPTIONS) as channel:
         stub = rpc_pb2_grpc.ReplicatorStub(channel)
@@ -97,7 +95,7 @@ async def handle_append(request):
         logging.info(f'{tr_id_local}: Appended {(tr_id_local, msg)} to in-memory list\n')
         return web.Response(text=f'{tr_id_local}: Appended {(tr_id_local, msg)} to in-memory list\n')
 
-    replication_tasks = [retry(replicate_msg, s, tr_id_local, msg) for s in secondaries_dns_names]
+    replication_tasks = [asyncio.create_task(retry(replicate_msg, s, tr_id_local, msg)) for s in secondaries_dns_names]
     acks_info = await wait_first_n(replication_tasks, num_of_acks_to_wait_for)
 
     logging.info(f'{tr_id_local}: ACKs: {acks_info}')
