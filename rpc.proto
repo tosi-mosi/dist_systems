@@ -4,10 +4,12 @@ package rpc;
 
 service Replicator {
   rpc replicateMsg (Request) returns (Response) {}
+  rpc rejoin (RejoinRequest) returns (Response) {}
 }
 
 message Request {
-  string msg = 1;
+  uint64 tr_id = 1;
+  string msg = 2;
 }
 
 // do we need this? Mb gRPC uses ACKs internally?

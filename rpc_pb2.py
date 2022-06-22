@@ -14,7 +14,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\trpc.proto\x12\x03rpc\"\x16\n\x07Request\x12\x0b\n\x03msg\x18\x01 \x01(\t\"\x1b\n\x08Response\x12\x0f\n\x07success\x18\x01 \x01(\x08\x32;\n\nReplicator\x12-\n\x0creplicateMsg\x12\x0c.rpc.Request\x1a\r.rpc.Response\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\trpc.proto\x12\x03rpc\"%\n\x07Request\x12\r\n\x05tr_id\x18\x01 \x01(\x04\x12\x0b\n\x03msg\x18\x02 \x01(\t\"\x1b\n\x08Response\x12\x0f\n\x07success\x18\x01 \x01(\x08\x32;\n\nReplicator\x12-\n\x0creplicateMsg\x12\x0c.rpc.Request\x1a\r.rpc.Response\"\x00\x62\x06proto3')
 
 
 
@@ -39,9 +39,9 @@ if _descriptor._USE_C_DESCRIPTORS == False:
 
   DESCRIPTOR._options = None
   _REQUEST._serialized_start=18
-  _REQUEST._serialized_end=40
-  _RESPONSE._serialized_start=42
-  _RESPONSE._serialized_end=69
-  _REPLICATOR._serialized_start=71
-  _REPLICATOR._serialized_end=130
+  _REQUEST._serialized_end=55
+  _RESPONSE._serialized_start=57
+  _RESPONSE._serialized_end=84
+  _REPLICATOR._serialized_start=86
+  _REPLICATOR._serialized_end=145
 # @@protoc_insertion_point(module_scope)

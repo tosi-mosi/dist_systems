@@ -10,7 +10,9 @@ import re
 import subprocess
 import time
 
-log = []
+log = {}
+out_of_order_requests = {}
+count = 0
 
 # potentially secondary could run rpc server and web server separately, but would need to share data somehow one with another.
 
@@ -29,6 +31,14 @@ async def delay(secs):
 #     logging.info('Sleeping for %s sec...', secs)
 #     time.sleep(secs)
 
+def process_unordered_requests(tr_id):
+    tmp = tr_id+1
+    while tmp in out_of_order_requests:
+        logging.info(f'Adding previously unordered msg to log {(tmp, out_of_order_requests[tmp])}')
+        # also removes tmp from dict
+        log[tmp] = out_of_order_requests.pop(tmp)
+
+
 # GRPC server
 class Replicator(rpc_pb2_grpc.ReplicatorServicer):
     async def replicateMsg(
@@ -36,11 +46,42 @@ class Replicator(rpc_pb2_grpc.ReplicatorServicer):
             context: grpc.aio.ServicerContext) -> rpc_pb2.Response:
         logging.info('Processing gRPC request')
 
-        if (len(sys.argv) > 1):
-            await delay(int(sys.argv[1]))
+        global count
+        # TODO break this into functions by simulation
+        # for simulating temporary inconsistency
+        if (len(sys.argv) == 5 and sys.argv[1] == 'delay' and request.msg == sys.argv[3] and count < int(sys.argv[4])):           
+            count += 1
+            await delay(int(sys.argv[2]))
         
-        log.append(request.msg)
-        logging.info('%s was appended to replica-log\n', request.msg)
+        # skip this when simulating out-of-order or duplication
+        need_to_skip_this_for_simulation = len(sys.argv) == 4 \
+            and (sys.argv[1] == 'dont_add_and_abort' or sys.argv[1] == 'add_and_abort')\
+            and request.msg == sys.argv[2]\
+            and count < int(sys.argv[3])
+        if not need_to_skip_this_for_simulation:
+            if (request.tr_id in log):
+                logging.error(f'Duplication detected: value with tr_id {request.tr_id} already present')
+                return rpc_pb2.Response(success=True)
+            if (request.tr_id != 1 and request.tr_id-1 not in log):
+                logging.info(f'Got an out of order request {(request.tr_id, request.msg)}')
+                out_of_order_requests[request.tr_id] = request.msg
+                return rpc_pb2.Response(success=True)
+
+        # for simulating out-of-order
+        if (len(sys.argv) == 4 and sys.argv[1] == 'dont_add_and_abort' and request.msg == sys.argv[2] and count < int(sys.argv[3])):
+            count += 1
+            raise Exception('MyException')
+        else:
+            log[request.tr_id] = request.msg
+
+        process_unordered_requests(request.tr_id)
+
+        # for simulating duplication
+        if (len(sys.argv) == 4 and sys.argv[1] == 'add_and_abort' and request.msg == sys.argv[2] and count < int(sys.argv[3])):
+            count += 1
+            raise Exception('MyException')
+
+        logging.info('%s was appended to replica-log\n', (request.tr_id, request.msg))
         return rpc_pb2.Response(success=True)
 
 async def rpc_serve() -> None:
@@ -54,7 +95,7 @@ async def rpc_serve() -> None:
 
 # HTTP server
 async def handle_list(request):
-    return web.Response(text='\n'.join(log) + '\n')
+    return web.Response(text='\n'.join([log[k] for k in sorted(log.keys())]) + '\n')
 
 # Main
 async def main():

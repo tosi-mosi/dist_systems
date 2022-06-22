@@ -37,7 +37,8 @@ docker run -it --rm -uroot -v$(pwd):/root/dist_systems -w/root/dist_systems --ca
 -c "apt-get update && apt-get install -y inetutils-ping iproute2 netcat && pip install aiohttp grpcio-tools grpcio && exec /bin/bash -i"
 
 #for sending requests using dns names
-docker run -it --rm -uroot --net=my_network1 python:3 bash
+docker run -it --rm -uroot --cap-add=NET_ADMIN --net=my_network1 python:3 \ 
+/bin/bash -c "apt-get update && apt-get install -y inetutils-ping iproute2 netcat && exec /bin/bash -i"
 
 
 #--------DELAYS USING LINUX CMD--------------
@@ -46,3 +47,8 @@ docker run -it --rm -uroot --net=my_network1 python:3 bash
  docker exec -it dist_systems.s tc qdisc add dev eth0 root netem delay 1s
  docker exec -it dist_systems.s tc qdisc del dev eth0 root
  docker exec -it dist_systems.s tc qdisc show  dev eth0
+
+# for testing
+alias lm='time curl dist_systems.m:8080/list';
+alias ls1='time curl dist_systems.s.1:8080/list';
+alias ls2='time curl dist_systems.s.2:8080/list'

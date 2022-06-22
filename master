@@ -9,7 +9,8 @@ import sys
 import json
 from retry import retry
 
-log = []
+tr_id = 0
+log = {}
 
 secondaries_dns_names = [
     f'dist_systems.s.{i+1}' for i in range(0, int(sys.argv[1]))
@@ -20,55 +21,26 @@ MAX_WRITE_CONCERN = 1 + len(secondaries_dns_names)
 # Plus I need multiple connections to multiple secondaries
 
 # GRPC clients
-
-grpc_retries_config = json.dumps(
-    {
-        "methodConfig": [
-            {
-                "name": [{}],
-                "timeout": "5s",
-                # "retryPolicy": {
-                #     "maxAttempts": 100000,
-                #     "initialBackoff": "1000000s",
-                #     "maxBackoff": "1000000s",
-                #     "backoffMultiplier": 1000000,
-                #     "retryableStatusCodes": ["UNAVAILABLE"],
-                # },
-            }
-        ]
-    }
-)
-# For more channel options, please see https://grpc.io/grpc/core/group__grpc__arg__keys.html
 CHANNEL_OPTIONS = [
-    # ('grpc.lb_policy_name', 'pick_first'),
-    # ('grpc.retryPolicy.maxAttempts', 8),
-    # ('grpc.retryPolicy.initialBackoff', '5s'),
-    # ('grpc.retryPolicy.maxBackoff', '20s'),
-    # ('grpc.retryPolicy.backoffMultiplier', 2),
-    # ('grpc.retryPolicy.retryableStatusCodes', 14),
     ('grpc.enable_retries', 0),
-    # ('grpc.timeout', 5000),
-    # ('grpc.service_config', grpc_retries_config),
-    # ('grpc.keepalive_timeout_ms', 5000),
 ]
 
-async def replicate_msg(sec_ip, msg):
+async def replicate_msg(sec_ip, tr_id, msg):
     # this will recreate channel on every single request, is it OK ?
     # need to understand what is this channel
     async with grpc.aio.insecure_channel(target=f'{sec_ip}:{50051}',
                                          options=CHANNEL_OPTIONS) as channel:
         stub = rpc_pb2_grpc.ReplicatorStub(channel)
-        # response = await stub.replicateMsg(rpc_pb2.Request(msg=msg),
-        #                                timeout=10)
-        logging.info('Waiting for gRPC response from %s', sec_ip)
-        response = await stub.replicateMsg(rpc_pb2.Request(msg=msg))
-    logging.info('%s on %s', 'ACK' if response.success else 'Fail', sec_ip)
+        logging.info(f'{tr_id}: Waiting for gRPC response from {sec_ip}')
+        # can add timeout=seconds here
+        response = await stub.replicateMsg(rpc_pb2.Request(tr_id=tr_id, msg=msg))
+    logging.info(f"{tr_id}: {'ACK' if response.success else 'Fail'} on {sec_ip}")
     return (sec_ip, response.success)
 
 # HTTP server
 # https://demos.aiohttp.org/en/latest/tutorial.html#aiohttp-demos-polls-getting-started
 async def handle_list(request):
-    return web.Response(text='\n'.join(log) + '\n')
+    return web.Response(text='\n'.join([log[k] for k in sorted(log.keys())]) + '\n')
 
 async def wait_first_n(tasks, n):
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -79,6 +51,9 @@ async def wait_first_n(tasks, n):
         results += await wait_first_n(pending, n - len(done))
     return results
 
+def replicate_without_waiting(tr_id, msg):
+    for s in secondaries_dns_names:
+        asyncio.get_event_loop().create_task(retry(replicate_msg, s, tr_id, msg))
 
 async def handle_append(request):
     logging.info('Processing http request from %r', request.remote)
@@ -94,29 +69,30 @@ async def handle_append(request):
         logging.error('Wrong write_concern parameter %s\n', body)
         return web.Response(text=f'Failed to parse POST request: Wrong write_concern parameter. write_concern shouldn\'t be greater than {MAX_WRITE_CONCERN}\n', status=400)
 
+    global tr_id
+    tr_id += 1
+    tr_id_local = tr_id
+
     num_of_acks_to_wait_for = write_concern - 1
-    logging.info(f'Waiting for ACKs from {num_of_acks_to_wait_for} secondary/-ies')
+    logging.info(f'{tr_id_local}: Waiting for ACKs from {num_of_acks_to_wait_for} secondary/-ies')
     if num_of_acks_to_wait_for == 0:
-        for s in secondaries_dns_names:
-            asyncio.get_event_loop().create_task(replicate_msg(s, msg))
-        log.append(msg)
-        logging.info(f'Appended {msg} to in-memory list\n')
-        return web.Response(text=f'Appended {msg} to in-memory list\n')
+        replicate_without_waiting(tr_id_local, msg)
+        log[tr_id_local] = msg
+        logging.info(f'{tr_id_local}: Appended {(tr_id_local, msg)} to in-memory list\n')
+        return web.Response(text=f'{tr_id_local}: Appended {(tr_id_local, msg)} to in-memory list\n')
 
-
-    replication_tasks = [replicate_msg(s, msg) for s in secondaries_dns_names]
-    # replication_tasks = [retry(replicate_msg, s, msg) for s in secondaries_dns_names]
+    replication_tasks = [retry(replicate_msg, s, tr_id_local, msg) for s in secondaries_dns_names]
     acks_info = await wait_first_n(replication_tasks, num_of_acks_to_wait_for)
 
-    logging.info(f'ACKs: {acks_info}')
+    logging.info(f'{tr_id_local}: ACKs: {acks_info}')
     if all([ack[1] for ack in acks_info]):
-        log.append(msg)
-        logging.info(f'Appended {msg} to in-memory list\n')
-        return web.Response(text=f'Appended {msg} to in-memory list\n')
+        log[tr_id_local] = msg
+        logging.info(f'{tr_id_local}: Appended {(tr_id_local, msg)} to in-memory list\n')
+        return web.Response(text=f'{tr_id_local}: Appended {(tr_id_local, msg)} to in-memory list\n')
     else:
         # here some secondaries could have added msg, but some didn't. And master didn't.
-        logging.error(f'Failed to append {msg}: Got not enough ACKs from secondaries\n')
-        return web.Response(text=f'Failed to append "{msg}": Got not enough ACKs from secondaries\n', status=500)
+        logging.error(f'{tr_id_local}: Failed to append {(tr_id_local, msg)}: Got not enough ACKs from secondaries\n')
+        return web.Response(text=f'{tr_id_local}: Failed to append "{(tr_id_local, msg)}": Got not enough ACKs from secondaries\n', status=500)
 
 if (len(sys.argv) < 2):
     print('Usage: master <number_of_secondaries>')
