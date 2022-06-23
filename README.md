@@ -1,6 +1,6 @@
 Usage:
 
-	./secondary [delay <seconds> <msg> <number_of_times> | dont_add_and_abort <msg> <number_of_times> | add_and_abort <msg> <number_of_times>]
+	./secondary [delay <seconds> [<msg> <number_of_failed_tries>] | dont_add_and_abort <msg> <number_of_failed_tries> | add_and_abort <msg> <number_of_failed_tries>]
 
 	./master <number_of_secondaries>
 

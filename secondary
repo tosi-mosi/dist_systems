@@ -20,9 +20,10 @@ async def delay(secs):
 def process_unordered_requests(tr_id):
     tmp = tr_id+1
     while tmp in out_of_order_requests:
-        logging.info(f'Adding previously unordered msg to log {(tmp, out_of_order_requests[tmp])}')
+        logging.info(f'Adding previously unordered message {(tmp, out_of_order_requests[tmp])} to log')
         # also removes tmp from dict
         log[tmp] = out_of_order_requests.pop(tmp)
+        tmp += 1
 
 # GRPC server
 class Replicator(rpc_pb2_grpc.ReplicatorServicer):
@@ -33,10 +34,10 @@ class Replicator(rpc_pb2_grpc.ReplicatorServicer):
         
         def normal_handling():
             if (request.tr_id in log):
-                logging.error(f'Duplication detected: value with tr_id {request.tr_id} already present')
+                logging.error(f'Duplication detected: value with tr_id {request.tr_id} already present. Not adding {(request.tr_id, request.msg)} to log')
                 return rpc_pb2.Response(success=True)
             if (request.tr_id != 1 and request.tr_id-1 not in log):
-                logging.info(f'Got an out of order request {(request.tr_id, request.msg)}')
+                logging.info(f'Got an out of order request {(request.tr_id, request.msg)}. Saving it for later processing')
                 out_of_order_requests[request.tr_id] = request.msg
                 return rpc_pb2.Response(success=True)
             log[request.tr_id] = request.msg
@@ -44,12 +45,17 @@ class Replicator(rpc_pb2_grpc.ReplicatorServicer):
             logging.info('%s was appended to replica-log\n', (request.tr_id, request.msg))
             return rpc_pb2.Response(success=True)
 
-        def simulate_for_duplication():
+        # (1, msg1) comes, isn't added anywhere, triggers 'number_of_failed_tries' sequential internal server errors because of exception
+        # (2, msg2) comes, is added
+        # on 'number_of_failed_tries'+1 try (1, msg1) is finally added by normal_handling, which resolves out-of-order problem
+        def simulate_for_out_of_order():
             global count
             count += 1
             raise Exception('Simulating internal server error')
 
-        def simulate_for_out_of_order():
+        # (1, msg1) comes, is added to log, triggers 'number_of_failed_tries' sequential internal server errors because of exception
+        # on 'number_of_failed_tries'+1 try normal_handling is called, it sees that (1, msg) is in log already, resolves deduplication
+        def simulate_for_duplication():
             global count
             count += 1
             log[request.tr_id] = request.msg
@@ -63,10 +69,12 @@ class Replicator(rpc_pb2_grpc.ReplicatorServicer):
             return normal_handling()
 
         if (len(sys.argv) == 4 and sys.argv[1] == 'dont_add_and_abort' and request.msg == sys.argv[2] and count < int(sys.argv[3])):
-            simulate_for_duplication()
-        elif (len(sys.argv) == 4 and sys.argv[1] == 'add_and_abort' and request.msg == sys.argv[2] and count < int(sys.argv[3])):
             simulate_for_out_of_order()
+        elif (len(sys.argv) == 4 and sys.argv[1] == 'add_and_abort' and request.msg == sys.argv[2] and count < int(sys.argv[3])):
+            simulate_for_duplication()
         elif (len(sys.argv) == 5 and sys.argv[1] == 'delay' and request.msg == sys.argv[3] and count < int(sys.argv[4])):
+            return await simulate_delay()
+        elif (len(sys.argv) == 3 and sys.argv[1] == 'delay'):
             return await simulate_delay()
         else:
             return normal_handling()

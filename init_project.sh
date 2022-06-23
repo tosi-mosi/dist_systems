@@ -1,9 +1,9 @@
-#!/bin/bash
+# #!/bin/bash
 
-if [ "$#" -ne 1 ]; then
-  echo "Usage: init_project.sh <number_of_secondaries>" >&2
-  exit 1
-fi
+# if [ "$#" -ne 1 ]; then
+#   echo "Usage: init_project.sh <number_of_secondaries>" >&2
+#   exit 1
+# fi
 
 docker run -it --rm -uroot -v$(pwd):/root/dist_systems -w/root/dist_systems -p8080:8080 python:3 /bin/bash -c "pip install aiohttp grpcio-tools grpcio && exec /bin/bash -i" \
 -name dist_systems.m
@@ -49,7 +49,8 @@ docker run -it --rm -uroot --cap-add=NET_ADMIN --net=my_network1 python:3 \
  docker exec -it dist_systems.s tc qdisc show  dev eth0
 
 # for testing
-alias lm='time curl dist_systems.m:8080/list';
-alias ls1='time curl dist_systems.s.1:8080/list';
-alias ls2='time curl dist_systems.s.2:8080/list';
+alias lm='curl dist_systems.m:8080/list';
+alias ls1='curl dist_systems.s.1:8080/list';
+alias ls2='curl dist_systems.s.2:8080/list';
+alias lall='echo "  master:";lm;echo "  secondary1:";ls1;echo "  secondary2:";ls2;'
 app() { time curl dist_systems.m:8080/append -d"{\"msg\":\"$1\", \"w\":\"$2\"}" ; };
